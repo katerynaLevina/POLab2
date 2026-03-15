@@ -87,23 +87,18 @@ void runCAS(int* data, int N, int numThreads) {
         int end_idx = (t == numThreads - 1) ? N : (t + 1) * chunkSize;
 
         threads[t] = thread([&, start_idx, end_idx]() {
-            long long local_count = 0;
-            int local_min = numeric_limits<int>::max();
-
-
             for (int i = start_idx; i < end_idx; ++i) {
                 if (data[i] % DIVISOR == 0) {
-                    local_count++;
-                    if (data[i] < local_min) local_min = data[i];
+
+                    long long current_count = atomic_count.load(memory_order_relaxed);
+                    while (!atomic_count.compare_exchange_weak(current_count, current_count + 1, memory_order_relaxed)) {
+                    }
+
+                    int current_min = atomic_min.load(memory_order_relaxed);
+                    while (data[i] < current_min &&
+                           !atomic_min.compare_exchange_weak(current_min, data[i], memory_order_relaxed)) {
+                    }
                 }
-            }
-
-
-            atomic_count.fetch_add(local_count, memory_order_relaxed);
-
-            int current_min = atomic_min.load(memory_order_relaxed);
-            while (local_min < current_min &&
-                   !atomic_min.compare_exchange_weak(current_min, local_min, memory_order_relaxed)) {
             }
         });
     }
@@ -123,7 +118,7 @@ void runCAS(int* data, int N, int numThreads) {
 }
 
 int main() {
-    int N = 10000000;
+    int N = 1000000;
     int numThreads = 8;
 
     cout << "Initializing array of size " << N << "...\n\n";
