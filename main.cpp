@@ -73,6 +73,55 @@ void runMutex(int* data, int N, int numThreads) {
     delete[] threads;
 }
 
+void runCAS(int* data, int N, int numThreads) {
+    atomic<long long> atomic_count(0);
+    atomic<int> atomic_min(numeric_limits<int>::max());
+
+    thread* threads = new thread[numThreads];
+    int chunkSize = N / numThreads;
+
+    auto start_time = chrono::high_resolution_clock::now();
+
+    for (int t = 0; t < numThreads; ++t) {
+        int start_idx = t * chunkSize;
+        int end_idx = (t == numThreads - 1) ? N : (t + 1) * chunkSize;
+
+        threads[t] = thread([&, start_idx, end_idx]() {
+            long long local_count = 0;
+            int local_min = numeric_limits<int>::max();
+
+
+            for (int i = start_idx; i < end_idx; ++i) {
+                if (data[i] % DIVISOR == 0) {
+                    local_count++;
+                    if (data[i] < local_min) local_min = data[i];
+                }
+            }
+
+
+            atomic_count.fetch_add(local_count, memory_order_relaxed);
+
+            int current_min = atomic_min.load(memory_order_relaxed);
+            while (local_min < current_min &&
+                   !atomic_min.compare_exchange_weak(current_min, local_min, memory_order_relaxed)) {
+            }
+        });
+    }
+
+    for (int i = 0; i < numThreads; ++i) {
+        threads[i].join();
+    }
+
+    auto end_time = chrono::high_resolution_clock::now();
+    chrono::duration<double> duration_sec = end_time - start_time;
+
+    cout << "--- CAS (" << numThreads << " threads) ---\n";
+    cout << "Result: Count = " << atomic_count << " | Min = " << atomic_min << "\n";
+    cout << "Execution time: "  << duration_sec.count() << " s\n\n";
+
+    delete[] threads;
+}
+
 int main() {
     int N = 10000000;
     int numThreads = 8;
@@ -88,7 +137,7 @@ int main() {
 
     runLinear(data, N);
     runMutex(data, N, numThreads);
-
+    runCAS(data, N, numThreads);
 
     delete[] data;
 
